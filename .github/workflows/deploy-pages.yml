@@ -1,7 +1,6 @@
 # Pubblica il Monte Carlo Trading Simulator su GitHub Pages.
-# Il sito viene generato dalla cartella ./montecarlo e pubblicato sul branch
-# gh-pages. Una volta attivato Pages (Settings -> Pages -> Deploy from a branch
-# -> gh-pages / root) il portale sara' raggiungibile da un link pubblico.
+# Usa il metodo ufficiale GitHub Actions con auto-attivazione (enablement):
+# non e' necessario impostare nulla manualmente in Settings -> Pages.
 name: Deploy Monte Carlo Portal
 
 on:
@@ -9,37 +8,48 @@ on:
     branches:
       - claude/monte-carlo-trading-sim-6a2awi
       - main
-    paths:
-      - 'montecarlo/**'
-      - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
+# consente una sola pubblicazione concorrente
 concurrency:
-  group: pages-deploy
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configura Pages (attiva se necessario)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - name: Prepara il sito
         run: |
           mkdir -p _site
           cp -r montecarlo/* _site/
-          # evita che Jekyll interferisca con la pubblicazione dei file
           touch _site/.nojekyll
 
-      - name: Deploy su GitHub Pages
-        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
+      - name: Carica l'artifact del sito
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./_site
-          publish_branch: gh-pages
-          force_orphan: true
-          commit_message: "deploy: aggiorna portale Monte Carlo"
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Pubblica su GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
