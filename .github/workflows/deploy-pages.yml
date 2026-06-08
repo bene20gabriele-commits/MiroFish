@@ -1,0 +1,45 @@
+# Pubblica il Monte Carlo Trading Simulator su GitHub Pages.
+# Il sito viene generato dalla cartella ./montecarlo e pubblicato sul branch
+# gh-pages. Una volta attivato Pages (Settings -> Pages -> Deploy from a branch
+# -> gh-pages / root) il portale sara' raggiungibile da un link pubblico.
+name: Deploy Monte Carlo Portal
+
+on:
+  push:
+    branches:
+      - claude/monte-carlo-trading-sim-6a2awi
+      - main
+    paths:
+      - 'montecarlo/**'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepara il sito
+        run: |
+          mkdir -p _site
+          cp -r montecarlo/* _site/
+          # evita che Jekyll interferisca con la pubblicazione dei file
+          touch _site/.nojekyll
+
+      - name: Deploy su GitHub Pages
+        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          publish_branch: gh-pages
+          force_orphan: true
+          commit_message: "deploy: aggiorna portale Monte Carlo"
