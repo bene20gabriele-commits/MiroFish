@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monte Carlo Trading Simulator — Analisi professionale del backtest</title>
+  <meta name="description" content="Simulatore Monte Carlo professionale per il trading: carica il backtest in CSV ed esegui migliaia di simulazioni per stimare rischio, drawdown e probabilità di profitto." />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📊</span>
+      <div>
+        <h1>Monte Carlo Trading Simulator</h1>
+        <p class="tagline">Analisi professionale del rischio · carica il backtest CSV ed esegui la simulazione</p>
+      </div>
+    </div>
+    <a class="ghost-link" href="README.md" target="_blank">Guida</a>
+  </header>
+
+  <main>
+    <!-- ============ STEP 1: CARICAMENTO ============ -->
+    <section class="card step">
+      <div class="step-head"><span class="step-num">1</span><h2>Carica il backtest (CSV)</h2></div>
+      <div id="dropzone" class="dropzone">
+        <div class="dz-icon">⬆️</div>
+        <p><b>Trascina qui il file CSV</b> oppure clicca per selezionarlo</p>
+        <p class="muted">Esporta le operazioni dal tuo software (MT4/MT5, TradingView, NinjaTrader, Excel…). Serve almeno una colonna con il profitto/perdita per operazione.</p>
+        <input type="file" id="fileInput" accept=".csv,text/csv" hidden />
+      </div>
+      <div class="row gap mt">
+        <button id="loadSampleBtn" class="btn-secondary">Usa un dataset di esempio</button>
+        <span id="fileName" class="file-name muted"></span>
+      </div>
+    </section>
+
+    <!-- ============ STEP 2: CONFIGURAZIONE ============ -->
+    <section id="configSection" class="card step hidden">
+      <div class="step-head"><span class="step-num">2</span><h2>Configura la simulazione</h2></div>
+
+      <div class="form-grid">
+        <label class="field">
+          <span>Colonna profitto/perdita</span>
+          <select id="pnlColumn"></select>
+          <small>Colonna del CSV che contiene il risultato di ogni operazione.</small>
+        </label>
+
+        <label class="field">
+          <span>Capitale iniziale (€)</span>
+          <input type="number" id="initialCapital" value="10000" min="1" step="100" />
+          <small>Saldo di partenza del conto.</small>
+        </label>
+
+        <label class="field">
+          <span>Numero di simulazioni</span>
+          <input type="number" id="numSims" value="2000" min="100" max="100000" step="100" />
+          <small>Quanti percorsi casuali generare (più = più preciso, più lento).</small>
+        </label>
+
+        <label class="field">
+          <span>Operazioni per percorso</span>
+          <input type="number" id="numTrades" value="200" min="1" step="1" />
+          <small id="numTradesHint">Numero di operazioni per ogni percorso simulato.</small>
+        </label>
+
+        <label class="field">
+          <span>Soglia di rovina (% capitale)</span>
+          <input type="number" id="ruinThreshold" value="50" min="0" max="100" step="1" />
+          <small>Equity sotto questa % del capitale = conto "rovinato".</small>
+        </label>
+
+        <label class="field">
+          <span>Operazioni per anno <span class="opt">(opzionale)</span></span>
+          <input type="number" id="tradesPerYear" value="0" min="0" step="1" />
+          <small>Se valorizzato, calcola CAGR e Sharpe/Sortino annualizzati.</small>
+        </label>
+
+        <label class="field">
+          <span>Seed casuale</span>
+          <input type="number" id="seed" value="12345" min="1" step="1" />
+          <small>Stesso seed = risultati riproducibili.</small>
+        </label>
+
+        <label class="field check">
+          <span>Tipo di valore</span>
+          <label class="inline-check"><input type="checkbox" id="isPercent" /> I valori sono percentuali (%)</label>
+          <small>Lascia deselezionato se la colonna è in valuta (€/$).</small>
+        </label>
+      </div>
+
+      <div class="opt-blocks">
+        <fieldset class="optset">
+          <legend>Metodo Monte Carlo</legend>
+          <label class="radio"><input type="radio" name="method" value="bootstrap" checked />
+            <span><b>Bootstrap</b> — ricampiona le operazioni <i>con</i> reinserimento. Stima l'incertezza sui risultati futuri.</span></label>
+          <label class="radio"><input type="radio" name="method" value="shuffle" />
+            <span><b>Permutazione</b> — usa le stesse operazioni in ordine casuale. Misura il rischio di sequenza (drawdown).</span></label>
+          <label class="radio"><input type="radio" name="method" value="parametric" />
+            <span><b>Parametrico</b> — estrae da una distribuzione Normale stimata su media e deviazione standard.</span></label>
+        </fieldset>
+
+        <fieldset class="optset">
+          <legend>Dimensionamento posizione</legend>
+          <label class="radio"><input type="radio" name="sizing" value="fixed" checked />
+            <span><b>Importo fisso</b> — ogni operazione somma il suo P&amp;L (equity additiva).</span></label>
+          <label class="radio"><input type="radio" name="sizing" value="compound" />
+            <span><b>Capitalizzazione composta</b> — il rischio scala con l'equity corrente (interesse composto).</span></label>
+        </fieldset>
+      </div>
+
+      <!-- Statistiche del backtest originale -->
+      <div id="backtestCard" class="subcard hidden">
+        <h3>Statistiche del backtest caricato</h3>
+        <div id="backtestStats" class="stats-grid"></div>
+      </div>
+
+      <div class="run-row">
+        <button id="runBtn" class="btn-primary">▶  Esegui simulazione Monte Carlo</button>
+        <span id="runSpinner" class="spinner hidden"></span>
+      </div>
+    </section>
+
+    <!-- ============ STEP 3: RISULTATI ============ -->
+    <section id="resultsSection" class="card step hidden">
+      <div class="step-head">
+        <span class="step-num">3</span><h2>Risultati</h2>
+        <span id="elapsed" class="muted small"></span>
+      </div>
+
+      <div id="kpiGrid" class="kpi-grid"></div>
+
+      <div class="chart-block">
+        <h3>Proiezione equity — grafico a ventaglio</h3>
+        <p class="muted small">Bande percentili di tutti i percorsi simulati. La linea verde è la mediana, quella arancione tratteggiata è il tuo backtest reale.</p>
+        <div class="canvas-wrap tall"><canvas id="fanChart"></canvas></div>
+      </div>
+
+      <div class="charts-2col">
+        <div class="chart-block">
+          <h3>Distribuzione equity finale</h3>
+          <div class="canvas-wrap"><canvas id="finalHist"></canvas></div>
+        </div>
+        <div class="chart-block">
+          <h3>Distribuzione max drawdown</h3>
+          <div class="canvas-wrap"><canvas id="ddHist"></canvas></div>
+        </div>
+      </div>
+
+      <div class="chart-block">
+        <h3>Distribuzione dei rendimenti</h3>
+        <div class="canvas-wrap"><canvas id="retHist"></canvas></div>
+      </div>
+
+      <div class="results-2col">
+        <div class="subcard">
+          <h3>Statistiche complete</h3>
+          <div id="detailStats" class="stats-grid"></div>
+        </div>
+        <div class="subcard">
+          <h3>Interpretazione</h3>
+          <div id="interpretation" class="interpretation"></div>
+        </div>
+      </div>
+
+      <div class="row gap mt">
+        <button id="exportBtn" class="btn-secondary">⬇ Esporta risultati (CSV)</button>
+        <button id="exportJsonBtn" class="btn-secondary">⬇ Esporta report (JSON)</button>
+      </div>
+    </section>
+
+    <footer class="foot muted small">
+      <p><b>Avvertenza:</b> strumento di analisi statistica a scopo didattico/professionale. Le simulazioni si basano sui dati storici forniti e <b>non garantiscono</b> i risultati futuri. Le performance passate non sono indicative di quelle future.</p>
+    </footer>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/stats.js"></script>
+  <script src="js/csv.js"></script>
+  <script src="js/montecarlo.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
